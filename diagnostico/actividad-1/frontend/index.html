@@ -1,0 +1,38 @@
+<!DOCTYPE html> 
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Stock de materiales</title>
+</head>
+
+<body>
+
+    <h1>Mi sistema de stock</h1>
+
+    <h2>Operaciones</h2>
+
+    <input type="text" id="nombre" placeholder="Nombre del material">
+    <input type="number" id="cantidad" placeholder="Cantidad">
+    <select id="unidad">
+        <option value="kg">kg</option>
+        <option value="m3">m³</option>
+        <option value="unidad">unidad</option>
+    </select>
+
+    <br><br>
+
+    <button onclick="agregar()">Agregar Material</button>
+    <button onclick="comprar()">Registrar Compra</button>
+    <button onclick="vender()">Registrar Venta</button>
+
+    <br><br>
+
+    <div id="mensaje"></div>
+
+    <h2>Stock</h2>
+    <div id="stock"></div>
+
+    <script src="app.js"></script>
+
+</body>
+</html>
