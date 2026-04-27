@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Registro</title>
+</head>
+<body>
+
+<h1>Registro de usuario</h1>
+
+<register-form></register-form>
+
+<script>
+class RegisterForm extends HTMLElement
+{
+    connectedCallback()
+    {
+        this.innerHTML = `
+            <input id="user" placeholder="Usuario">
+            <input id="pass" type="password" placeholder="Password">
+            <button id="btn">Registrarse</button>
+        `;
+
+		this.querySelector('#btn').addEventListener('click', (e) => {
+    	e.preventDefault(); // 🔥 evita el GET
+    	this.enviar();
+		});
+    }
+
+    async enviar()
+    {
+        const username = this.querySelector('#user').value;
+        const password = this.querySelector('#pass').value;
+
+        const res = await fetch('/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password })
+	});
+
+	if (!res.ok) {
+    const text = await res.text();
+    throw new Error('Error del servidor: ' + text);
+}
+
+	const data = await res.json();
+	console.log('Respuesta:', data);
+    }
+}
+
+customElements.define('register-form', RegisterForm);
+</script>
+
+</body>
+</html>
