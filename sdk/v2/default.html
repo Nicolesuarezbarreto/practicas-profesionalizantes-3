@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Registro y Login</title>
+</head>
+<body>
+
+<h1>Registro de usuario</h1>
+<register-form></register-form>
+
+<hr> <h1>Iniciar Sesión</h1>
+<login-form></login-form>
+
+<script>
+class RegisterForm extends HTMLElement {
+    connectedCallback() {
+        this.innerHTML = `
+            <input id="user" placeholder="Usuario">
+            <input id="pass" type="password" placeholder="Password">
+            <button id="btn">Registrarse</button>
+        `;
+
+        this.querySelector('#btn').addEventListener('click', (e) => {
+            e.preventDefault(); 
+            this.enviar();
+        });
+    }
+
+    async enviar() {
+        const username = this.querySelector('#user').value;
+        const password = this.querySelector('#pass').value;
+        const res = await fetch('/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+
+        if (!res.ok) {
+            const text = await res.text();
+            throw new Error('Error del servidor: ' + text);
+        }
+
+        const data = await res.json();
+        console.log('Respuesta Registro:', data);
+        alert("Usuario registrado correctamente");
+    }
+}
+
+
+customElements.define('register-form', RegisterForm);
+
+class LoginForm extends HTMLElement {
+    connectedCallback() {
+        this.innerHTML = `
+            <input id="l_user" placeholder="Usuario">
+            <input id="l_pass" type="password" placeholder="Password">
+            <button id="l_btn">Entrar</button>
+        `;
+        this.querySelector('#l_btn').addEventListener('click', () => this.ingresar());
+    }
+
+    async ingresar() {
+        const username = this.querySelector('#l_user').value;
+        const password = this.querySelector('#l_pass').value;
+        
+        const res = await fetch('/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+        const data = await res.json();
+        console.log('Respuesta Login:', data);
+        
+        if(data.status) {
+            alert("¡Bienvenida! Tu ID de grupo es: " + data.result.id_group);
+        } else {
+            alert("Error: " + data.description);
+        }
+    }
+}
+customElements.define('login-form', LoginForm);
+</script>
+
+</body>
+</html>
