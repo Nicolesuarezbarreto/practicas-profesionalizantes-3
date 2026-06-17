@@ -116,6 +116,17 @@
     </div>
 
     <script>
+
+        async function calcularHashSHA256(cadena) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(cadena);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(function convertToHex(b) { 
+        return b.toString(16).padStart(2, '0'); 
+    }).join('');
+    return hashHex;
+}
         let isLoginMode = true;
         let usuarioLogueado = null;
 
@@ -130,8 +141,8 @@
         const lblUsuario = document.getElementById('lblUsuario');
         const consola = document.getElementById('consola');
 
-        // Alternar visualmente entre Login y Registro
-        toggleMode.addEventListener('click', () => {
+
+        toggleMode.addEventListener('click', function alternarModoAuth() {
             isLoginMode = !isLoginMode;
             formTitle.innerText = isLoginMode ? "Iniciar Sesión" : "Registrar Usuario";
             btnSubmit.innerText = isLoginMode ? "Ingresar" : "Crear cuenta";
@@ -140,14 +151,17 @@
             feedbackMsg.className = "";
         });
 
-        // Manejar el envío del formulario
-        authForm.addEventListener('submit', async (e) => {
+// Manejar el envío del formulario
+        authForm.addEventListener('submit', async function manejarEnvioAuth(e) {
             e.preventDefault();
             const user = document.getElementById('username').value;
-            const pass = document.getElementById('password').value;
+            const rawPass = document.getElementById('password').value; // Obtenemos la clave real
             
             feedbackMsg.className = "";
             feedbackMsg.innerText = "Procesando...";
+
+            // Hasheamos la clave ANTES de enviarla
+            const hashedPass = await calcularHashSHA256(rawPass); 
 
             if (isLoginMode) {
                 // --- FLUJO DE LOGIN ---
@@ -155,12 +169,12 @@
                     const response = await fetch('/login', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ username: user, password: pass })
+                        // Enviamos el hash en lugar de la clave cruda
+                        body: JSON.stringify({ username: user, password: hashedPass })
                     });
                     
                     const data = await response.json();
 
-                    // CORRECCIÓN DEL BUG: Validamos que data no sea null antes de leer .status
                     if (response.ok && data && data.status === 'enabled') {
                         usuarioLogueado = data.username;
                         mostrarDashboard();
@@ -175,13 +189,13 @@
             } else {
                 // --- FLUJO DE REGISTRO ---
                 try {
-                    // El backend original espera los datos por GET en el registro
-                    const response = await fetch(`/register?username=${user}&password=${pass}`);
+                    // Enviamos el hash en la URL
+                    const response = await fetch(`/register?username=${user}&password=${hashedPass}`);
                     if (response.ok) {
                         feedbackMsg.className = "success-text";
                         feedbackMsg.innerText = "¡Usuario creado! Ahora podés iniciar sesión.";
-                        setTimeout(() => {
-                            if (!isLoginMode) toggleMode.click(); // Volver al modo login automáticamente
+                        setTimeout(function volverALogin() {
+                            if (!isLoginMode) toggleMode.click(); 
                         }, 1500);
                     } else {
                         feedbackMsg.className = "error-text";
@@ -193,7 +207,7 @@
                 }
             }
         });
-
+        
         function mostrarDashboard() {
             authContainer.classList.add('hidden');
             dashboardContainer.classList.remove('hidden');
@@ -201,11 +215,9 @@
             consola.innerText = "> Sesión iniciada correctamente. Interceptores listos.";
             feedbackMsg.innerText = "";
             
-            // Limpiar inputs por seguridad
             document.getElementById('password').value = "";
         }
 
-        // --- MANEJO DE LOS BOTONES DE PRUEBA (SDK V3) ---
         async function probarEndpoint(path) {
             if (!usuarioLogueado) return;
             
@@ -222,16 +234,16 @@
             }
         }
 
-        document.getElementById('btnLog').onclick = () => probarEndpoint('/log');
-        document.getElementById('btnSayHello').onclick = () => probarEndpoint('/sayHello');
+
+        document.getElementById('btnLog').onclick = function clickBtnLog() { probarEndpoint('/log'); };
+        document.getElementById('btnSayHello').onclick = function clickBtnSayHello() { probarEndpoint('/sayHello'); };
         
         // Manejo del Logout
-        document.getElementById('btnLogout').onclick = () => {
+    
+        document.getElementById('btnLogout').onclick = function cerrarSesion() {
             usuarioLogueado = null;
             document.getElementById('username').value = "";
             dashboardContainer.classList.add('hidden');
             authContainer.classList.remove('hidden');
         };
     </script>
-</body>
-</html>

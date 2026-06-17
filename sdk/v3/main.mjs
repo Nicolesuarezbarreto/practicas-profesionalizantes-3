@@ -56,12 +56,11 @@ function connect_db(path)
     }
 }
 
-// --- ITEM 2: MECANISMO DE SESIÓN EN MEMORIA (MODIFICADO MÍNIMAMENTE) ---
 let userSessions = new Map();  // clave: username, valor: instancia de UserSession
 
 class UserSession
 {
-    constructor(username) // <-- Le agregamos el parámetro para que la sesión sepa a quién le pertenece
+    constructor(username)
     {
        this.username = username;
        this.status = 'disabled';
@@ -85,7 +84,6 @@ function authenticate( username, password )
     }
 }
 
-// --- ITEM 1: AUTORIZADOR (CORREGIDO EL BUG DE LA VARIABLE 'path') ---
 function authorize( username, endpointPath )
 {
     const sql = `
@@ -255,26 +253,28 @@ async function login_handler(request, response)
     if ( request.method == "POST" )
     {
        let body = '';
-        request.on('data', chunk => {
-            body += chunk.toString();
-        });
+    
+       request.on('data', function recibirDatosLogin(chunk) {
+           body += chunk.toString();
+       });
 
-        request.on('end', async () => 
-        {
-            try 
-            {
-                const input = JSON.parse(body);
-                const output = login(input.username, input.password); 
 
-                response.writeHead(200, { 'Content-Type': 'application/json' });
-                response.end(JSON.stringify(output));
-            } 
-            catch (err) 
-            {
-                response.writeHead(400, { 'Content-Type': 'application/json' });
-                response.end(JSON.stringify({ error: 'Formato JSON inválido' }));
-            }
-        });
+       request.on('end', async function procesarDatosLogin() 
+       {
+           try 
+           {
+               const input = JSON.parse(body);
+               const output = login(input.username, input.password); 
+
+               response.writeHead(200, { 'Content-Type': 'application/json' });
+               response.end(JSON.stringify(output));
+           } 
+           catch (err) 
+           {
+               response.writeHead(400, { 'Content-Type': 'application/json' });
+               response.end(JSON.stringify({ error: 'Formato JSON inválido' }));
+           }
+       });
     }
     else
     {
