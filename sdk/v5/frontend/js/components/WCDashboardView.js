@@ -1,91 +1,87 @@
-import { RPCWebAPIFetch } from '../api-client.js';
+import { RPCWebAPIFetch, limpiarCredenciales } from '../api-client.js';
+import { mostrarVista } from '../vistas.js';
 
 export class WCDashboardView extends HTMLElement {
     constructor() {
         super();
-        this.innerHTML = `
-            <style>
-                h2 { margin-top: 0; color: #333; font-size: 22px; text-align: center; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-                .subtitle { color: #666; font-size: 14px; text-align: center; margin-bottom: 20px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-                button { width: 100%; padding: 10px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; margin-top: 10px; font-weight: bold; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-                .btn-ok { background-color: #28a745; color: white; margin-bottom: 10px; }
-                .btn-ok:hover { background-color: #218838; }
-                .btn-fail { background-color: #dc3545; color: white; }
-                .btn-fail:hover { background-color: #c82333; }
-                #consola { background: #212529; color: #00ff00; padding: 15px; border-radius: 4px; margin-top: 15px; font-family: monospace; font-size: 13px; min-height: 40px; word-wrap: break-word; white-space: pre-line; }
-                .link { color: #dc3545; text-decoration: none; font-size: 14px; display: block; text-align: center; margin-top: 20px; cursor: pointer; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-                .link:hover { text-decoration: underline; }
-            </style>
-            <h2>Bienvenido, <span id="lblUsuario" style="color: #007bff;"></span></h2>
-            <p class="subtitle">Panel de control y pruebas de Autorización.</p>
-            
-            <button id="btnLog" class="btn-ok">Ejecutar /log</button>
-            <button id="btnSayHello" class="btn-fail">Ejecutar /sayHello</button>
-            
-            <div id="consola">> Esperando interacción...</div>
-            
-            <span class="link" id="btnLogout">Cerrar Sesión</span>
-        `;
-        this.btnLog = this.querySelector('#btnLog');
-        this.btnHello = this.querySelector('#btnSayHello');
-        this.btnLogout = this.querySelector('#btnLogout');
-        this.consola = this.querySelector('#consola');
-        this.lblUsuario = this.querySelector('#lblUsuario');
 
-        this.manejadorLog = this.ejecutarLog.bind(this);
-        this.manejadorHello = this.ejecutarHello.bind(this);
-        this.manejadorLogout = this.cerrarSesion.bind(this);
+        this.card = document.createElement('div');
+        this.card.className = 'card';
+        this.appendChild(this.card);
+
+        this.titulo = document.createElement('h2');
+        this.titulo.appendChild(document.createTextNode('Bienvenido, '));
+        this.spanUsuario = document.createElement('span');
+        this.spanUsuario.style.color = '#007bff';
+        this.titulo.appendChild(this.spanUsuario);
+        this.card.appendChild(this.titulo);
+
+        this.subtitulo = document.createElement('p');
+        this.subtitulo.className = 'subtitle';
+        this.subtitulo.textContent = 'Panel de control y pruebas de Autorización.';
+        this.card.appendChild(this.subtitulo);
+
+        this.botonLog = document.createElement('button');
+        this.botonLog.className = 'btn-ok';
+        this.botonLog.textContent = 'Ejecutar /log';
+        this.card.appendChild(this.botonLog);
+
+        this.botonSayHello = document.createElement('button');
+        this.botonSayHello.className = 'btn-fail';
+        this.botonSayHello.textContent = 'Ejecutar /sayHello';
+        this.card.appendChild(this.botonSayHello);
+
+        this.consola = document.createElement('div');
+        this.consola.className = 'consola';
+        this.consola.textContent = '> Esperando interacción...';
+        this.card.appendChild(this.consola);
+
+        this.enlaceLogout = document.createElement('span');
+        this.enlaceLogout.className = 'link';
+        this.enlaceLogout.style.color = '#dc3545';
+        this.enlaceLogout.textContent = 'Cerrar Sesión';
+        this.card.appendChild(this.enlaceLogout);
     }
 
     connectedCallback() {
-        this.btnLog.addEventListener('click', this.manejadorLog);
-        this.btnHello.addEventListener('click', this.manejadorHello);
-        this.btnLogout.addEventListener('click', this.manejadorLogout);
+        this.botonLog.onclick = this.probarLog.bind(this);
+        this.botonSayHello.onclick = this.probarSayHello.bind(this);
+        this.enlaceLogout.onclick = this.cerrarSesion.bind(this);
     }
 
     disconnectedCallback() {
-        this.btnLog.removeEventListener('click', this.manejadorLog);
-        this.btnHello.removeEventListener('click', this.manejadorHello);
-        this.btnLogout.removeEventListener('click', this.manejadorLogout);
+        this.botonLog.onclick = null;
+        this.botonSayHello.onclick = null;
+        this.enlaceLogout.onclick = null;
     }
 
     setUsuario(nombre) {
-        this.lblUsuario.innerText = nombre;
-        this.consola.innerText = "> Sesión iniciada correctamente. Interceptores listos.";
+        this.spanUsuario.textContent = nombre;
+        this.consola.textContent = '> Sesión iniciada correctamente. Interceptores listos.';
     }
 
-    async ejecutarLog() {
-        this.consola.innerText = "> Solicitando /log...";
-        try {
-            var res = await RPCWebAPIFetch('/log', { accion: 'test' });
-            this.consola.innerText = "> [HTTP 200]\n" + JSON.stringify(res);
-        } catch (error) {
-            this.consola.innerText = "> [HTTP ERROR]\n" + JSON.stringify(error);
-        }
-    }
+    probarLog() { this.probarEndpoint('/log'); }
+    probarSayHello() { this.probarEndpoint('/sayHello'); }
 
-    async ejecutarHello() {
-        this.consola.innerText = "> Solicitando /sayHello...";
+    async probarEndpoint(ruta) {
+        this.consola.textContent = '> Solicitando ' + ruta + '...';
         try {
-            var res = await RPCWebAPIFetch('/sayHello', { accion: 'test' });
-            this.consola.innerText = "> [HTTP 200]\n" + JSON.stringify(res);
-        } catch (error) {
-            this.consola.innerText = "> [HTTP ERROR]\n" + JSON.stringify(error);
-        }
+            const datos = await RPCWebAPIFetch(ruta, {});
+            this.consola.textContent = '> [HTTP 200] ' + JSON.stringify(datos);
+            } catch (error) {
+                this.consola.textContent = '> [Error ' + error.type + '] ' + error.detail;
+                if (error.type === 'InvalidSessionException' || error.type === 'UnauthorizedException') {
+                    limpiarCredenciales();
+                    mostrarVista('vista-login');
+                }
+            }
     }
 
     async cerrarSesion() {
-        
-        try {
-            await RPCWebAPIFetch('/logout', { accion: 'logout' });
-        } catch (error) {
-            console.error("Error al cerrar sesión en servidor:", error);
-        }
-
-        window.usuarioLogueado = null;
-        window.claveHashLogueado = null;
-        document.getElementById('vista-dashboard').classList.add('hidden');
-        document.getElementById('vista-login').classList.remove('hidden');
+        try { await RPCWebAPIFetch('/logout', {}); } catch (error) { /* igual salimos */ }
+        limpiarCredenciales();
+        mostrarVista('vista-login');
     }
 }
+
 customElements.define('wc-dashboard-view', WCDashboardView);

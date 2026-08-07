@@ -1,80 +1,138 @@
-import { RPCWebAPIFetch } from '../api-client.js';
+import { RPCWebAPIFetch, calcularHashSHA256, establecerCredenciales, limpiarCredenciales } from '../api-client.js';
+import { mostrarVista } from '../vistas.js';
 
 export class WCLoginFormView extends HTMLElement {
     constructor() {
         super();
-        this.innerHTML = `
-            <style>
-                h2 { margin-top: 0; color: #333; font-size: 22px; text-align: center; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-                .form-group { margin-bottom: 15px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-                label { display: block; margin-bottom: 5px; color: #555; font-size: 14px; font-weight: bold; }
-                input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-size: 14px; }
-                button { width: 100%; padding: 10px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; margin-top: 10px; font-weight: bold; background-color: #007bff; color: white; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-                button:hover { background-color: #0056b3; }
-                .link { color: #007bff; text-decoration: none; font-size: 14px; display: block; text-align: center; margin-top: 20px; cursor: pointer; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-                .link:hover { text-decoration: underline; }
-            </style>
-            <h2>Iniciar Sesión</h2>
-            <form id="authForm">
-                <div class="form-group">
-                    <label>Usuario</label>
-                    <input type="text" id="login-user" required autocomplete="off">
-                </div>
-                <div class="form-group">
-                    <label>Contraseña</label>
-                    <input type="password" id="login-pass" required>
-                </div>
-                <button type="button" id="btn-login">Ingresar</button>
-            </form>
-            <span class="link" id="go-register">¿No tenés cuenta? Registrate acá</span>
-        `;
-        this.btnLogin = this.querySelector('#btn-login');
-        this.btnGoRegister = this.querySelector('#go-register');
-        this.inputUser = this.querySelector('#login-user');
-        this.inputPass = this.querySelector('#login-pass');
-        
-        this.manejadorLogin = this.ejecutarLogin.bind(this);
-        this.manejadorIrRegistro = this.mostrarRegistro.bind(this);
+
+        this.card = document.createElement('div');
+        this.card.className = 'w3-white w3-round w3-border w3-margin-bottom tarjeta-auth';
+        this.appendChild(this.card);
+
+        this.caja = document.createElement('div');
+        this.caja.className = 'w3-padding-large';
+        this.card.appendChild(this.caja);
+
+        this.encabezado = document.createElement('div');
+        this.encabezado.className = 'w3-center w3-padding-16';
+        this.logo = document.createElement('img');
+        this.logo.className = 'w3-image';
+        this.logo.src = './assets/logo-isft151.png';
+        this.logo.alt = 'ISFT 151';
+        this.logo.style.width = '90px';
+        this.titulo = document.createElement('p');
+        this.titulo.textContent = 'INICIAR SESIÓN';
+        this.encabezado.appendChild(this.logo);
+        this.encabezado.appendChild(this.titulo);
+        this.caja.appendChild(this.encabezado);
+
+        this.campoUsuario = document.createElement('div');
+        this.campoUsuario.className = 'w3-margin-bottom';
+        this.inputUsuario = document.createElement('input');
+        this.inputUsuario.type = 'text';
+        this.inputUsuario.className = 'w3-input w3-round w3-border';
+        this.inputUsuario.placeholder = 'Ingrese su usuario';
+        this.campoUsuario.appendChild(this.inputUsuario);
+        this.caja.appendChild(this.campoUsuario);
+
+        this.campoClave = document.createElement('div');
+        this.campoClave.className = 'w3-margin-bottom';
+        this.inputClave = document.createElement('input');
+        this.inputClave.type = 'password';
+        this.inputClave.className = 'w3-input w3-round w3-border';
+        this.inputClave.placeholder = 'Ingrese su contraseña';
+        this.campoClave.appendChild(this.inputClave);
+        this.caja.appendChild(this.campoClave);
+
+        this.campoCheck = document.createElement('div');
+        this.campoCheck.className = 'w3-margin-bottom';
+        this.checkTerminos = document.createElement('input');
+        this.checkTerminos.type = 'checkbox';
+        this.checkTerminos.className = 'w3-check';
+        this.checkTerminos.checked = true;
+        this.labelTerminos = document.createElement('label');
+        this.labelTerminos.textContent = ' ACEPTO TÉRMINOS Y CONDICIONES';
+        this.campoCheck.appendChild(this.checkTerminos);
+        this.campoCheck.appendChild(this.labelTerminos);
+        this.caja.appendChild(this.campoCheck);
+        this.botonIngresar = document.createElement('button');
+        this.botonIngresar.type = 'button';
+        this.botonIngresar.className = 'w3-button w3-round w3-margin-bottom w3-primary w3-block';
+        this.botonIngresar.textContent = 'Ingresar';
+        this.caja.appendChild(this.botonIngresar);
+
+        this.feedback = document.createElement('p');
+        this.feedback.className = 'feedback';
+        this.caja.appendChild(this.feedback);
+
+        this.pie = document.createElement('div');
+        this.pie.className = 'w3-center w3-border-top';
+        this.mensajePie = document.createElement('p');
+        this.mensajePie.className = 'w3-margin';
+        this.avisoPie = document.createElement('span');
+        this.avisoPie.className = 'w3-text-warning';
+        this.avisoPie.textContent = '¿No tenés cuenta?';
+        this.enlaceRegistro = document.createElement('a');
+        this.enlaceRegistro.href = '#';
+        this.enlaceRegistro.textContent = ' Registrate acá';
+        this.mensajePie.appendChild(this.avisoPie);
+        this.mensajePie.appendChild(this.enlaceRegistro);
+        this.pie.appendChild(this.mensajePie);
+        this.card.appendChild(this.pie);
     }
 
     connectedCallback() {
-        this.btnLogin.addEventListener('click', this.manejadorLogin);
-        this.btnGoRegister.addEventListener('click', this.manejadorIrRegistro);
+        this.botonIngresar.onclick = this.ejecutarLogin.bind(this);
+        this.enlaceRegistro.onclick = this.irARegistro.bind(this);
     }
 
     disconnectedCallback() {
-        this.btnLogin.removeEventListener('click', this.manejadorLogin);
-        this.btnGoRegister.removeEventListener('click', this.manejadorIrRegistro);
+        this.botonIngresar.onclick = null;
+        this.enlaceRegistro.onclick = null;
     }
+
+    irARegistro(evento) {
+        evento.preventDefault();
+        this.ocultarFeedback();
+        mostrarVista('vista-registro');
+    }
+
+    mostrarFeedback(texto) {
+        this.feedback.textContent = texto;
+        this.feedback.className = 'feedback feedback-error';
+    }
+
+    mostrarExito(texto) {
+        this.feedback.textContent = texto;
+        this.feedback.className = 'feedback feedback-exito';
+    }
+
+    ocultarFeedback() { this.feedback.textContent = ''; }
 
     limpiarCampos() {
-        this.inputUser.value = '';
-        this.inputPass.value = '';
-    }
-
-    mostrarRegistro() {
-        document.getElementById('vista-login').classList.add('hidden');
-        document.getElementById('vista-registro').classList.remove('hidden');
+        this.inputUsuario.value = '';
+        this.inputClave.value = '';
     }
 
     async ejecutarLogin() {
-        var usuario = this.inputUser.value;
-        var clave = this.inputPass.value;
-        try {
-            var respuesta = await RPCWebAPIFetch('/login', { user: usuario, pass: clave });
-            
-            this.limpiarCampos();
+        const usuario = this.inputUsuario.value;
+        const clave = this.inputClave.value;
+        if (!usuario || !clave) { this.mostrarFeedback('Completá usuario y contraseña.'); return; }
 
-            window.usuarioLogueado = usuario;
-            window.claveHashLogueado = respuesta.token || 'fake-token';
-            
-            document.getElementById('vista-login').classList.add('hidden');
-            var dashboard = document.getElementById('vista-dashboard');
-            dashboard.classList.remove('hidden');
-            dashboard.setUsuario(usuario);
+        const hash = await calcularHashSHA256(clave);
+        establecerCredenciales(usuario, hash);
+
+        try {
+            await RPCWebAPIFetch('/login', {});
+            this.limpiarCampos();
+            this.ocultarFeedback();
+            document.getElementById('vista-dashboard').setUsuario(usuario);
+            mostrarVista('vista-dashboard');
         } catch (error) {
-            alert('Error en login: ' + (error.detail || 'Desconocido'));
+            limpiarCredenciales();
+            this.mostrarFeedback('Credenciales incorrectas o usuario no encontrado. (' + error.type + ')');
         }
     }
 }
+
 customElements.define('wc-login-form-view', WCLoginFormView);

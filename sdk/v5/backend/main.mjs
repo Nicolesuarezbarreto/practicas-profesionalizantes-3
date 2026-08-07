@@ -1,117 +1,390 @@
-import http from 'http';
-import fs from 'fs';
+import { createServer } from 'node:http';
+import { URL } from 'node:url';
+import { readFileSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
+import { resolve } from 'node:path';
 
-var configData = fs.readFileSync('./config.json', 'utf8');
-var config = JSON.parse(configData);
-
-var userSessions = new Map();
-
-function authorize(username, endpointPath) { 
-    if (endpointPath === '/log') {
-        return username === 'admin';
-    }
-    var rutasPermitidas = ['/print', '/help'];
-    return rutasPermitidas.indexOf(endpointPath) !== -1;
+function default_config() 
+{
+    const config = 
+    {
+        server: 
+        {
+            ip: '127.0.0.1',
+            port: 3000,
+            default_path: './index.html'
+        },
+        database: 
+        {
+            path: './database.db'
+        }
+    };
+    return config;
 }
 
-async function secure_interceptor(request, response, endpointPath, originalHandler) {
-    var username = request.headers['x-user-id'];
-    var authHeader = request.headers['authorization'];
-
-    if (!username || !authHeader || authHeader.indexOf('Bearer ') !== 0) {
-        response.writeHead(401, { 'Content-Type': 'application/json' });
-        response.end(JSON.stringify({ exception: 'UnauthorizedException', detail: 'Faltan credenciales' }));
-        return;
+function load_config() 
+{
+    let config = null;
+    try 
+    {
+        const data = readFileSync('./config.json', 'utf-8');
+        config = JSON.parse(data);
+        console.log("Configuración cargada correctamente.");
+    } 
+    catch (error) 
+    {
+        console.error("Error cargando config.json. Usando valores por defecto.");
+        config = default_config();
     }
+    return config;
+}
 
-    var currentSession = userSessions.get(username);
-    if (!currentSession || currentSession.status !== 'enabled') {
-        response.writeHead(401, { 'Content-Type': 'application/json' });
-        response.end(JSON.stringify({ exception: 'InvalidSessionException', detail: 'Sesión inválida' }));
-        return;
-    }
+const config = load_config();
 
-    if (authorize(username, endpointPath)) {
-        await originalHandler(request, response);
-    } else {
-        response.writeHead(403, { 'Content-Type': 'application/json' });
-        response.end(JSON.stringify({ exception: 'ForbiddenAccessException', detail: 'Acceso denegado' }));
+function connect_db(path) 
+{
+    const dbPath = resolve(path);
+    try 
+    {
+        const db = new DatabaseSync(dbPath);
+        return db;
+    } 
+    catch (err) 
+    {
+        throw new Error("Error al conectar a la base de datos: " + err.message);
     }
 }
 
-async function handleLogin(request, response) {
-    var body = '';
-    request.on('data', function(chunk) {
-        body += chunk;
-    });
-    request.on('end', function() {
-        var credenciales = JSON.parse(body || '{}');
-        var user = credenciales.user || credenciales.username || '';
-        var pass = credenciales.password || credenciales.pass || '';
+const db = connect_db(config.database.path);
 
-        if (user.trim() === '' || pass.trim() === '') {
-            response.writeHead(401, { 'Content-Type': 'application/json' });
-            response.end(JSON.stringify({ exception: 'UnauthorizedException', detail: 'Debe ingresar usuario' }));
+let userSessions = new Map();  // clave: username, valor: instancia de UserSession
+
+class UserSession
+{
+    constructor(username)
+    {
+       this.username = username;
+       this.status = 'disabled';
+    }
+}
+
+function authenticate( username, password )
+{
+    const sql = "SELECT count(*) as total FROM `user` WHERE username=? AND password=?";
+    try 
+    {
+        const stmt = db.prepare(sql);
+        const row = stmt.get(username, password);
+            
+        return (row.total === 1);
+    } 
+    catch (err) 
+    {
+        throw err;
+    }
+}
+
+function authorize( username, endpointPath )
+{
+    const sql = `
+        SELECT count(*) as total
+        FROM access a
+        JOIN members m ON a.id_group = m.id_group
+        JOIN user u ON m.id_user = u.id
+        JOIN endpoint e ON a.id_endpoint = e.id
+        WHERE u.username = ? 
+          AND e.path = ?
+    `;
+    try {
+        const stmt = db.prepare(sql);
+        const row = stmt.get(username, endpointPath); 
+        return row.total > 0;
+    } catch (err) {
+        console.error("Error consultando permisos:", err);
+        throw err;
+    }
+}
+
+async function createUser(dbInstance, username, password) 
+{
+    const checkSql = "SELECT count(*) as total FROM user WHERE username = ?";
+    const checkStmt = dbInstance.prepare(checkSql);
+    const checkRow = checkStmt.get(username);
+
+    if (checkRow.total > 0) {
+        // Lanzamos un error específico para identificar la excepción de dominio
+        const error = new Error("El usuario ya existe en el sistema.");
+        error.code = "USER_EXISTS";
+        throw error;
+    }
+
+    const sql = "INSERT INTO user (username, password) VALUES (?, ?) RETURNING id";
+    
+    try 
+    {
+        const stmt = dbInstance.prepare(sql);
+        const row = stmt.get(username, password);
+
+        const result = 
+        {
+            id: row.id,
+            username: username,
+            password: password
+        };
+        
+        return result;
+    } 
+    catch (err) 
+    {
+        throw err;
+    }
+}
+
+function login( username, password )
+{
+    let isAuthenticated = authenticate(username, password);
+
+    if ( isAuthenticated )
+    {
+        let previousSession = userSessions.get(username);
+
+        if ( previousSession == null )
+        {
+            let newSession = new UserSession(username);
+            newSession.status = 'enabled';
+            userSessions.set(username, newSession );
+            return newSession;
+        }
+        else
+        {
+            if ( previousSession.status == 'disabled')
+            {
+                previousSession.status = 'enabled';
+            }
+    
+            return previousSession;
+        }
+    }
+    else
+    {
+        return null;
+    }
+}
+
+
+function log_handler(request, response)
+{
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    response.end(JSON.stringify({ status: "OK", message: "Endpoint /log ejecutado correctamente." }));
+}
+
+function sayHello_handler(request, response)
+{
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    response.end(JSON.stringify({ status: "OK", message: "¡Hola de /sayHello!" }));
+}
+
+// --- REFACTORIZACIÓN RPC: MANEJADOR DE LOGIN ---
+async function login_handler(request, response)
+{
+    if ( request.method == "POST" )
+    {
+        const username = request.headers['x-user-id'];
+        const password = request.headers['x-api-key'];
+
+        if (!username || !password) {
+            // RPC Estándar: Código 400 (Error de especificación de parámetros)
+            response.writeHead(400, { 'Content-Type': 'application/json' });
+            response.end(JSON.stringify({ 
+                exception: 'BadRequestException', 
+                detail: 'Faltan cabeceras x-user-id o x-api-key en la petición RPC.' 
+            }));
             return;
         }
 
-        userSessions.set(user, { status: 'enabled' });
-        response.writeHead(200, { 'Content-Type': 'application/json' });
-        response.end(JSON.stringify({ message: 'Login exitoso', token: 'token-valido-123' }));
-    });
-}
+        const output = login(username, password); 
 
-async function handleRegister(request, response) {
-    response.writeHead(200, { 'Content-Type': 'application/json' });
-    response.end(JSON.stringify({ message: 'Usuario registrado correctamente' }));
-}
-
-async function handleLogout(request, response) {
-    var username = request.headers['x-user-id'];
-    if (username) {
-        userSessions.delete(username);
+        if (output) {
+            response.writeHead(200, { 'Content-Type': 'application/json' });
+            response.end(JSON.stringify(output));
+        } else {
+            // RPC Estándar: Credenciales incorrectas es un error de permisos (401)
+            response.writeHead(401, { 'Content-Type': 'application/json' });
+            response.end(JSON.stringify({ 
+                exception: 'BadCredentialsException', 
+                detail: 'El usuario o la contraseña son incorrectos.' 
+            }));
+        }
     }
-    response.writeHead(200, { 'Content-Type': 'application/json' });
-    response.end(JSON.stringify({ message: 'Sesión cerrada' }));
+    else
+    {
+        response.writeHead(400, { 'Content-Type': 'application/json' });
+        response.end(JSON.stringify({ 
+            exception: 'InvalidMethodException', 
+            detail: 'Las WebAPI RPC estables requieren método POST.' 
+        }));
+    }
 }
 
-async function handleLog(request, response) {
-    response.writeHead(200, { 'Content-Type': 'application/json' });
-    response.end(JSON.stringify({ message: 'Log ejecutado con éxito por ' + request.headers['x-user-id'] }));
+// --- REFACTORIZACIÓN RPC: MANEJADOR DE REGISTRO ---
+async function register_handler(request, response)
+{
+    if ( request.method == "POST" )
+    {
+        const username = request.headers['x-user-id'];
+        const password = request.headers['x-api-key'];
+
+        if (!username || !password) {
+            response.writeHead(400, { 'Content-Type': 'application/json' });
+            response.end(JSON.stringify({ 
+                exception: 'BadRequestException', 
+                detail: 'Faltan cabeceras x-user-id o x-api-key para procesar el registro.' 
+            }));
+            return;
+        }
+
+        try 
+        {
+            const output = await createUser(db, username, password);
+            response.writeHead(200, { 'Content-Type': 'application/json' });
+            response.end(JSON.stringify(output));
+        }
+        catch (err)
+        {
+            if (err.code === "USER_EXISTS") {
+                // RPC Estándar: Código 422 para excepciones del dominio de la aplicación
+                response.writeHead(422, { 'Content-Type': 'application/json' });
+                response.end(JSON.stringify({ 
+                    exception: 'DomainUserExistsException', 
+                    detail: err.message 
+                }));
+            } else {
+                // RPC Estándar: Código 500 para fallas de infraestructura o errores imprevistos
+                response.writeHead(500, { 'Content-Type': 'application/json' });
+                response.end(JSON.stringify({ 
+                    exception: 'InternalServerErrorException', 
+                    detail: err.message 
+                }));
+            }
+        }
+    }
+    else 
+    {
+        response.writeHead(400, { 'Content-Type': 'application/json' });
+        response.end(JSON.stringify({ 
+            exception: 'InvalidMethodException', 
+            detail: 'Las WebAPI RPC estables requieren método POST.' 
+        }));
+    }
 }
 
-async function handleSayHello(request, response) {
+function show_message_handler(request, response)
+{
     response.writeHead(200, { 'Content-Type': 'application/json' });
-    response.end(JSON.stringify({ message: 'Hola ' + request.headers['x-user-id'] + ', acceso autorizado.' }));
+    response.end(JSON.stringify({ message: "Mensaje procesado" }));
 }
 
-var server = http.createServer(async function(req, res) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-user-id, Authorization');
 
-    if (req.method === 'OPTIONS') {
-        res.writeHead(200);
-        res.end();
+function responderError(response, codigo, excepcion, detalle) {
+    response.writeHead(codigo, { 'Content-Type': 'application/json' });
+    response.end(JSON.stringify({ exception: excepcion, detail: detalle }));
+}
+
+function leerClaveDeCabeceras(request) {
+    const authHeader = request.headers['authorization'];
+    if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+    return authHeader.substring(7);
+}
+function logout(username) {
+    const sesion = userSessions.get(username);
+    if (!sesion || sesion.status !== 'enabled') return false;
+    sesion.status = 'disabled';
+    return true;
+}
+
+function logout_handler(request, response) {
+    const username = request.headers['x-user-id'];
+    if (!username) {
+        responderError(response, 401, 'UnauthorizedException', 'Falta la cabecera x-user-id.');
         return;
     }
-
-    if (req.url === '/login') {
-        await handleLogin(req, res);
-    } else if (req.url === '/register') {
-        await handleRegister(req, res);
-    } else if (req.url === '/logout') {
-        await handleLogout(req, res);
-    } else if (req.url === '/log') {
-        await secure_interceptor(req, res, req.url, handleLog);
-    } else if (req.url === '/sayHello') {
-        await secure_interceptor(req, res, req.url, handleSayHello);
+    if (logout(username)) {
+        response.writeHead(200, { 'Content-Type': 'application/json' });
+        response.end(JSON.stringify({ status: 'success', message: 'Sesión cerrada correctamente.' }));
     } else {
-        res.writeHead(404);
-        res.end();
+        responderError(response, 422, 'DomainError', 'No había una sesión activa para cerrar.');
     }
-});
+}
 
-server.listen(config.server.port, config.server.ip, function() {
-    console.log('Servidor corriendo en http://' + config.server.ip + ':' + config.server.port);
-});
+function validarAutenticacion(request, response) {
+    const username = request.headers['x-user-id'];
+    const clave = leerClaveDeCabeceras(request);
+    if (!username || !clave) {
+        responderError(response, 401, 'UnauthorizedException', 'Faltan cabeceras de autenticación o formato Bearer inválido.');
+        return null;
+    }
+    return username;
+}
+
+function validarSesion(username, response) {
+    const sesion = userSessions.get(username);
+    if (!sesion || sesion.status !== 'enabled') {
+        responderError(response, 401, 'InvalidSessionException', 'Debes iniciar sesión primero o tu sesión expiró.');
+        return false;
+    }
+    return true;
+}
+
+function validarAutorizacion(username, ruta, response) {
+    if (!authorize(username, ruta)) {
+        responderError(response, 401, 'ForbiddenAccessException', 'Acceso Denegado a ' + ruta + '.');
+        return false;
+    }
+    return true;
+}
+
+const rutasPublicas   = { 
+    '/login': login_handler, 
+    '/register': register_handler,
+    '/showMessage': show_message_handler
+};
+const rutasDeSesion   = { '/logout': logout_handler };
+const rutasProtegidas = { 
+    '/log': log_handler, 
+    '/sayHello': sayHello_handler
+};
+
+function request_dispatcher(request, response) {
+    response.setHeader('Access-Control-Allow-Origin', '*');
+    response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    response.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-user-id, Authorization, x-api-version, x-api-key');
+    if (request.method === 'OPTIONS') { response.writeHead(204); response.end(); return; }
+
+    const ruta = request.url;
+
+    if (rutasPublicas[ruta]) return rutasPublicas[ruta](request, response);
+
+    if (rutasDeSesion[ruta]) {
+        const usuario = validarAutenticacion(request, response);
+        if (usuario === null) return;
+        if (!validarSesion(usuario, response)) return;
+        return rutasDeSesion[ruta](request, response);
+    }
+
+    const handler = rutasProtegidas[ruta];
+    if (!handler) { responderError(response, 400, 'SpecificationError', 'Ruta inexistente: ' + ruta); return; }
+
+    const usuario = validarAutenticacion(request, response);
+    if (usuario === null) return;
+    if (!validarSesion(usuario, response)) return;
+    if (!validarAutorizacion(usuario, ruta, response)) return;
+    return handler(request, response);
+}
+
+function start()
+{
+    console.log('Servidor ejecutándose en http://' + config.server.ip + ':' + config.server.port);
+}
+
+let server = createServer(request_dispatcher);
+server.listen(config.server.port, config.server.ip, start);

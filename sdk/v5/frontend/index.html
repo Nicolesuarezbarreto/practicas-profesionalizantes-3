@@ -2,39 +2,16 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Sistema de Autenticación V5 - Modular</title>
-    <style>
-        
-        body { 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            background-color: #f4f7f6; 
-            display: flex; 
-            justify-content: center; 
-            align-items: center; 
-            height: 100vh; 
-            margin: 0; 
-        }
-        .card { 
-            background: white; 
-            padding: 30px; 
-            border-radius: 8px; 
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1); 
-            width: 100%; 
-            max-width: 400px; 
-        }
-        .hidden { display: none !important; }
-    </style>
+    <title>Sistema de Autenticación V5</title>
+    <link rel="stylesheet" href="css/w3.css">
+    <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
-
-    <div class="card" id="contenedor-principal">
-    
+    <div id="contenedor-principal">
         <wc-login-form-view id="vista-login"></wc-login-form-view>
         <wc-register-form-view id="vista-registro" class="hidden"></wc-register-form-view>
         <wc-dashboard-view id="vista-dashboard" class="hidden"></wc-dashboard-view>
     </div>
-
-
     <script type="module" src="js/components/WCLoginFormView.js"></script>
     <script type="module" src="js/components/WCRegisterFormView.js"></script>
     <script type="module" src="js/components/WCDashboardView.js"></script>
